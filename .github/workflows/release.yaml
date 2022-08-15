@@ -1,0 +1,68 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag: git tag you want create. must be <ubuntu-version>.<incremental> (sample 22.04.1)"
+        required: true
+      dry_run:
+        description: "dry_run: true will never create release/nuget."
+        required: true
+        default: "false"
+
+env:
+  OWNER: guitarrapc
+  IMAGE_NAME: ubuntu-mingw-w64
+  DOCKER_BUILDKIT: 1
+  GIT_TAG: ${{ github.event.inputs.tag }}
+  DRY_RUN: ${{ github.event.inputs.dry_run }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      # build
+      - name: Docker build
+        run: |
+          docker build --build-arg VCS_REF=$(git rev-parse --short HEAD) -t ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest -f Dockerfile .
+          docker tag ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.GIT_TAG }}
+      # push
+      - name: Docker login
+        run: docker login -u ${{ env.DOCKER_USER }} -p ${{ env.DOCKER_PASS }}
+        env:
+          DOCKER_USER: ${{ secrets.SYNCED_DOCKER_USER }}
+          DOCKER_PASS: ${{ secrets.SYNCED_DOCKER_PASS }}
+      - if: env.DRY_RUN == 'false'
+        name: Docker push
+        run: |
+          docker push ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.GIT_TAG }}
+
+  release:
+    needs: [build-push]
+    if: github.event.inputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      # tag
+      - name: Git tag
+        run: git tag ${{ env.GIT_TAG }}
+      - name: Git push tag
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.SYNCED_GITHUB_TOKEN_REPO }}
+          branch: ${{ github.ref }}
+          tags: true
+      # release
+      - name: Create github release
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNCED_GITHUB_TOKEN_REPO }}
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          release_name: ${{ env.GIT_TAG }}
+          draft: true
+          prerelease: false

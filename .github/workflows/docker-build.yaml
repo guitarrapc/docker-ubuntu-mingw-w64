@@ -1,0 +1,20 @@
+name: Docker Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  OWNER: guitarrapc
+  IMAGE_NAME: ubuntu-mingw-w64
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Docker build
+        run: docker build --build-arg VCS_REF=$(git rev-parse --short HEAD) -t ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest -f Dockerfile .
